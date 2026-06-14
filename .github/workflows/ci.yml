@@ -1,11 +1,17 @@
-name: CI
+name: CI/CD
 
 on:
   push:
-    branches: [master, staging, develop]
+    branches: [develop, staging, master]
   pull_request:
-    branches: [master, staging]
+    branches: [develop]
   workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  deployments: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -171,3 +177,133 @@ jobs:
         with:
           name: zap-report
           path: zap_report/
+
+  deploy-review:
+    if: github.event_name == 'pull_request' && github.base_ref == 'develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: dast
+    environment:
+      name: review
+      url: http://localhost:5000
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy review app
+        run: docker compose up -d
+      - name: Wait for app
+        run: |
+          for i in $(seq 1 15); do
+            if curl -s -o /dev/null http://localhost:5000/login; then
+              echo "App is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App failed to start"
+          docker compose logs
+          exit 1
+      - name: Smoke tests
+        run: |
+          pip install -r requirements.txt 2>/dev/null
+          python scripts/smoke_test.py http://localhost:5000
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## ✅ Review Environment Ready\n\n'
+                + '| Item | Detalhe |\n'
+                + '|---|---|\n'
+                + '| **URL** | `http://localhost:5000` |\n'
+                + '| **Usuário** | `reviewer` |\n'
+                + '| **Senha** | `pass123` |\n'
+                + '| **Status** | ✅ Smoke tests passed |\n'
+                + '\n---\n'
+                + '_Este ambiente é temporário e será destruído ao final do job._'
+            })
+
+  deploy-staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: dast
+    environment:
+      name: staging
+      url: http://localhost:5000
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to staging
+        run: docker compose -p staging up -d
+      - name: Wait for app
+        run: |
+          for i in $(seq 1 15); do
+            if curl -s -o /dev/null http://localhost:5000/login; then
+              echo "Staging is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Staging failed to start"
+          docker compose -p staging logs
+          exit 1
+      - name: Run smoke tests on staging
+        run: |
+          pip install -r requirements.txt 2>/dev/null
+          python scripts/smoke_test.py http://localhost:5000
+
+  dast-staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: deploy-staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy staging app for ZAP
+        run: docker compose -p staging up -d
+      - name: Wait for app
+        run: |
+          for i in $(seq 1 15); do
+            if curl -s -o /dev/null http://localhost:5000/login; then
+              echo "App is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App failed to start"
+          exit 1
+      - name: ZAP Baseline Scan on staging
+        run: |
+          mkdir -p zap_staging_report
+          NETWORK=$(docker inspect "$(docker compose -p staging ps -q app)" \
+            --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' | head -1)
+          echo "Network: $NETWORK"
+          docker run --rm \
+            --network "$NETWORK" \
+            -v "$PWD/.zap/rules.tsv":/zap/rules.tsv:ro \
+            -v "$PWD/zap_staging_report":/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            /zap/zap-baseline.py \
+              -t http://app:5000 \
+              -c /zap/rules.tsv \
+              -J zap_report.json \
+              -r zap_report.html \
+              -I
+      - name: Summarize ZAP findings
+        if: always()
+        run: |
+          if [ -f zap_staging_report/zap_report.json ]; then
+            jq -r '.site[]?.alerts[]? | "  [\(.riskdesc)] \(.name) (x\(.count))"' zap_staging_report/zap_report.json 2>/dev/null
+            TOTAL=$(jq '[.site[]?.alerts[]?] | length' zap_staging_report/zap_report.json 2>/dev/null || echo 0)
+            echo "Total alerts: $TOTAL"
+          else
+            echo "ZAP report not found"
+          fi
+      - name: Upload staging ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-staging-report
+          path: zap_staging_report/
