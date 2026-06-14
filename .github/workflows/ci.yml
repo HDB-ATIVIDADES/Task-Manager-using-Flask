@@ -63,3 +63,56 @@ jobs:
         with:
           name: test-report
           path: report.xml
+
+  sast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      - name: Install dependencies + tools
+        run: |
+          pip install --no-cache-dir -r requirements.txt
+          pip install bandit pip-audit
+      - name: Bandit scan
+        run: |
+          cd todo_project
+          bandit -r . -f json -o ../bandit-report.json --exit-zero
+      - name: Bandit — fail on HIGH
+        run: |
+          python -c "
+          import json
+          with open('bandit-report.json') as f:
+              data = json.load(f)
+          high = [r for r in data.get('results', [])
+                  if r['issue_severity'] == 'HIGH']
+          if high:
+              for r in high:
+                  print(f'FAIL: {r[\"test_id\"]} {r[\"filename\"]}:{r[\"line_number\"]}')
+              exit(1)
+          print('No HIGH severity issues found')
+          "
+      - name: pip-audit scan
+        run: |
+          pip-audit -r requirements.txt -f json --desc | tee pip-audit-report.json
+      - name: Upload Bandit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+      - name: Upload pip-audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
