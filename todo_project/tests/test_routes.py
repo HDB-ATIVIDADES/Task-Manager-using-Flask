@@ -1,11 +1,10 @@
-import re
+import logging
 
 from todo_project import db
 from todo_project.models import Task
 
 
 def _add_task_and_get_id(client, task_name='Default task'):
-    """Helper: add a task and return its database ID."""
     client.post('/add_task', data={'task_name': task_name}, follow_redirects=True)
     with client.application.app_context():
         task = Task.query.filter_by(content=task_name).first()
@@ -97,6 +96,16 @@ class TestAuthorization:
         assert resp.status_code == 200
         assert b'Login' in resp.data or b'login' in resp.data.lower()
 
+    def test_about_requires_auth(self, client):
+        resp = client.get('/', follow_redirects=True)
+        assert resp.status_code == 200
+        assert b'Login' in resp.data or b'login' in resp.data.lower()
+
+    def test_about_page_requires_auth(self, client):
+        resp = client.get('/about', follow_redirects=True)
+        assert resp.status_code == 200
+        assert b'Login' in resp.data or b'login' in resp.data.lower()
+
 
 class TestTaskCRUD:
 
@@ -134,6 +143,56 @@ class TestTaskCRUD:
         assert b'Task Deleted' in resp.data
 
 
+class TestTaskIsolation:
+
+    def test_update_other_users_task_returns_403(self, client):
+        client.post('/register', data={
+            'username': 'alice', 'password': 'alicepass', 'confirm_password': 'alicepass'
+        }, follow_redirects=True)
+        client.post('/login', data={
+            'username': 'alice', 'password': 'alicepass'
+        }, follow_redirects=True)
+        task_id = _add_task_and_get_id(client, 'Alice task')
+        assert task_id is not None
+
+        client.get('/logout', follow_redirects=True)
+        client.post('/register', data={
+            'username': 'bob', 'password': 'bobpass', 'confirm_password': 'bobpass'
+        }, follow_redirects=True)
+        client.post('/login', data={
+            'username': 'bob', 'password': 'bobpass'
+        }, follow_redirects=True)
+        resp = client.post(
+            f'/all_tasks/{task_id}/update_task',
+            data={'task_name': 'Hacked'},
+            follow_redirects=True
+        )
+        assert resp.status_code == 403
+
+    def test_delete_other_users_task_returns_403(self, client):
+        client.post('/register', data={
+            'username': 'alice', 'password': 'alicepass', 'confirm_password': 'alicepass'
+        }, follow_redirects=True)
+        client.post('/login', data={
+            'username': 'alice', 'password': 'alicepass'
+        }, follow_redirects=True)
+        task_id = _add_task_and_get_id(client, 'Alice task')
+        assert task_id is not None
+
+        client.get('/logout', follow_redirects=True)
+        client.post('/register', data={
+            'username': 'bob', 'password': 'bobpass', 'confirm_password': 'bobpass'
+        }, follow_redirects=True)
+        client.post('/login', data={
+            'username': 'bob', 'password': 'bobpass'
+        }, follow_redirects=True)
+        resp = client.get(
+            f'/all_tasks/{task_id}/delete_task',
+            follow_redirects=True
+        )
+        assert resp.status_code == 403
+
+
 class TestAccount:
 
     def test_account_page(self, auth_client):
@@ -155,3 +214,44 @@ class TestAccount:
         }, follow_redirects=True)
         assert resp.status_code == 200
         assert b'Please Enter Correct Password' in resp.data
+
+
+class TestSyslog:
+
+    def test_login_success_logs(self, caplog, client):
+        caplog.set_level(logging.INFO)
+        client.post('/register', data={
+            'username': 'logsuser',
+            'password': 'logspass',
+            'confirm_password': 'logspass'
+        }, follow_redirects=True)
+        caplog.clear()
+        client.post('/login', data={
+            'username': 'logsuser',
+            'password': 'logspass'
+        }, follow_redirects=True)
+        assert any('LOGIN_SUCCESS' in msg for msg in caplog.messages)
+
+    def test_login_failure_logs(self, caplog, client):
+        caplog.set_level(logging.INFO)
+        client.post('/login', data={
+            'username': 'nobody',
+            'password': 'wrong'
+        }, follow_redirects=True)
+        assert any('LOGIN_FAILURE' in msg for msg in caplog.messages)
+
+    def test_register_success_logs(self, caplog, client):
+        caplog.set_level(logging.INFO)
+        client.post('/register', data={
+            'username': 'reguser',
+            'password': 'regpass',
+            'confirm_password': 'regpass'
+        }, follow_redirects=True)
+        assert any('REGISTER_SUCCESS' in msg for msg in caplog.messages)
+
+    def test_add_task_logs(self, caplog, auth_client):
+        caplog.set_level(logging.INFO)
+        auth_client.post('/add_task', data={
+            'task_name': 'Log task'
+        }, follow_redirects=True)
+        assert any('OPERATION_SUCCESS' in msg for msg in caplog.messages)

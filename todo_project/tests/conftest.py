@@ -1,3 +1,4 @@
+import logging
 import pytest
 from todo_project import app, db
 from todo_project.models import User, Task
@@ -8,6 +9,7 @@ def client():
     app.config['TESTING'] = True
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
     app.config['WTF_CSRF_ENABLED'] = False
+    app.logger.setLevel(logging.INFO)
 
     with app.test_client() as client:
         with app.app_context():
