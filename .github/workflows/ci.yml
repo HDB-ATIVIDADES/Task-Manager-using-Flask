@@ -147,13 +147,13 @@ jobs:
           docker run --rm \
             --network "$NETWORK" \
             -v "$PWD/.zap/rules.tsv":/zap/rules.tsv:ro \
-            -v "$PWD/zap_report":/zap/reports \
+            -v "$PWD/zap_report":/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             /zap/zap-baseline.py \
               -t http://app:5000 \
               -c /zap/rules.tsv \
-              -J /zap/reports/zap_report.json \
-              -r /zap/reports/zap_report.html \
+              -J zap_report.json \
+              -r zap_report.html \
               -I
       - name: Summarize ZAP findings
         if: always()
