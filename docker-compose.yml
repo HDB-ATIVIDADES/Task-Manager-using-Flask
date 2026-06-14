@@ -1,0 +1,11 @@
+services:
+  app:
+    image: python:3.9-slim
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - /dev/log:/dev/log
+    working_dir: /app/todo_project
+    command: >
+      sh -c "pip install --no-cache-dir -r /app/requirements.txt && python run.py"
