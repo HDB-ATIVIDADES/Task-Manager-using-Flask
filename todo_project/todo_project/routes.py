@@ -1,16 +1,13 @@
-from flask import render_template, url_for, flash, redirect, request
+from flask import render_template, url_for, flash, redirect, request, abort
 
 from todo_project import app, db, bcrypt
 
-# Import the forms
-from todo_project.forms import (LoginForm, RegistrationForm, UpdateUserInfoForm, 
+from todo_project.forms import (LoginForm, RegistrationForm, UpdateUserInfoForm,
                                 UpdateUserPassword, TaskForm, UpdateTaskForm)
 
-# Import the Models
 from todo_project.models import User, Task
 
-# Import 
-from flask_login import login_required, current_user, login_user, logout_user
+from flask_login import current_user, login_user, logout_user
 
 
 @app.errorhandler(404)
@@ -38,20 +35,24 @@ def login():
         return redirect(url_for('all_tasks'))
 
     form = LoginForm()
-    # After you submit the form
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
-        # Check if the user exists and the password is valid
         if user and bcrypt.check_password_hash(user.password, form.password.data):
             login_user(user)
+            app.logger.info(
+                f'LOGIN_SUCCESS user={form.username.data} ip={request.remote_addr}'
+            )
             task_form = TaskForm()
             flash('Login Successfull', 'success')
             return redirect(url_for('all_tasks'))
         else:
+            app.logger.warning(
+                f'LOGIN_FAILURE user={form.username.data} ip={request.remote_addr}'
+            )
             flash('Login Unsuccessful. Please check Username Or Password', 'danger')
-    
+
     return render_template('login.html', title='Login', form=form)
-    
+
 
 @app.route("/logout")
 def logout():
@@ -70,6 +71,7 @@ def register():
         user = User(username=form.username.data, password=hashed_password)
         db.session.add(user)
         db.session.commit()
+        app.logger.info(f'REGISTER_SUCCESS user={form.username.data}')
         flash(f'Account Created For {form.username.data}', 'success')
         return redirect(url_for('login'))
 
@@ -77,34 +79,44 @@ def register():
 
 
 @app.route("/all_tasks")
-@login_required
 def all_tasks():
     tasks = User.query.filter_by(username=current_user.username).first().tasks
     return render_template('all_tasks.html', title='All Tasks', tasks=tasks)
 
 
 @app.route("/add_task", methods=['POST', 'GET'])
-@login_required
 def add_task():
     form = TaskForm()
     if form.validate_on_submit():
         task = Task(content=form.task_name.data, author=current_user)
         db.session.add(task)
         db.session.commit()
+        app.logger.info(
+            f'OPERATION_SUCCESS user={current_user.username} action=create task_id={task.id}'
+        )
         flash('Task Created', 'success')
         return redirect(url_for('add_task'))
     return render_template('add_task.html', form=form, title='Add Task')
 
 
 @app.route("/all_tasks/<int:task_id>/update_task", methods=['GET', 'POST'])
-@login_required
 def update_task(task_id):
     task = Task.query.get_or_404(task_id)
+    if task.author != current_user:
+        app.logger.warning(
+            f'SECURITY_VIOLATION user={current_user.username} '
+            f'action=unauthorized_attempt resource=task/{task_id}'
+        )
+        abort(403)
     form = UpdateTaskForm()
     if form.validate_on_submit():
         if form.task_name.data != task.content:
             task.content = form.task_name.data
             db.session.commit()
+            app.logger.info(
+                f'OPERATION_SUCCESS user={current_user.username} '
+                f'action=update task_id={task_id}'
+            )
             flash('Task Updated', 'success')
             return redirect(url_for('all_tasks'))
         else:
@@ -116,33 +128,40 @@ def update_task(task_id):
 
 
 @app.route("/all_tasks/<int:task_id>/delete_task")
-@login_required
 def delete_task(task_id):
     task = Task.query.get_or_404(task_id)
+    if task.author != current_user:
+        app.logger.warning(
+            f'SECURITY_VIOLATION user={current_user.username} '
+            f'action=unauthorized_attempt resource=task/{task_id}'
+        )
+        abort(403)
     db.session.delete(task)
     db.session.commit()
+    app.logger.info(
+        f'OPERATION_SUCCESS user={current_user.username} '
+        f'action=delete task_id={task_id}'
+    )
     flash('Task Deleted', 'info')
     return redirect(url_for('all_tasks'))
 
 
 @app.route("/account", methods=['POST', 'GET'])
-@login_required
 def account():
     form = UpdateUserInfoForm()
     if form.validate_on_submit():
-        if form.username.data != current_user.username:  
+        if form.username.data != current_user.username:
             current_user.username = form.username.data
             db.session.commit()
             flash('Username Updated Successfully', 'success')
             return redirect(url_for('account'))
     elif request.method == 'GET':
-        form.username.data = current_user.username 
+        form.username.data = current_user.username
 
     return render_template('account.html', title='Account Settings', form=form)
 
 
 @app.route("/account/change_password", methods=['POST', 'GET'])
-@login_required
 def change_password():
     form = UpdateUserPassword()
     if form.validate_on_submit():
@@ -152,7 +171,6 @@ def change_password():
             flash('Password Changed Successfully', 'success')
             redirect(url_for('account'))
         else:
-            flash('Please Enter Correct Password', 'danger') 
+            flash('Please Enter Correct Password', 'danger')
 
     return render_template('change_password.html', title='Change Password', form=form)
-
