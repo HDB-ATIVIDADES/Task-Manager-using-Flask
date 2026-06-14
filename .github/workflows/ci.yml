@@ -116,3 +116,58 @@ jobs:
         with:
           name: pip-audit-report
           path: pip-audit-report.json
+
+  dast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: sast
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start app (Docker Compose)
+        run: docker compose up -d
+      - name: Wait for app to be ready
+        run: |
+          for i in $(seq 1 15); do
+            if curl -s -o /dev/null http://localhost:5000/login; then
+              echo "App is ready"
+              exit 0
+            fi
+            echo "Waiting... ($i)"
+            sleep 2
+          done
+          echo "App failed to start"
+          docker compose logs
+          exit 1
+      - name: ZAP Baseline Scan
+        run: |
+          mkdir -p zap_report
+          NETWORK=$(docker inspect "$(docker compose ps -q app)" \
+            --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' | head -1)
+          echo "Network: $NETWORK"
+          docker run --rm \
+            --network "$NETWORK" \
+            -v "$PWD/.zap/rules.tsv":/zap/rules.tsv:ro \
+            -v "$PWD/zap_report":/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            /zap/zap-baseline.py \
+              -t http://app:5000 \
+              -c /zap/rules.tsv \
+              -J zap_report.json \
+              -r zap_report.html \
+              -I
+      - name: Summarize ZAP findings
+        if: always()
+        run: |
+          if [ -f zap_report/zap_report.json ]; then
+            jq -r '.site[]?.alerts[]? | "  [\(.riskdesc)] \(.name) (x\(.count))"' zap_report/zap_report.json 2>/dev/null
+            TOTAL=$(jq '[.site[]?.alerts[]?] | length' zap_report/zap_report.json 2>/dev/null || echo 0)
+            echo "Total alerts: $TOTAL"
+          else
+            echo "ZAP report not found"
+          fi
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: zap_report/
