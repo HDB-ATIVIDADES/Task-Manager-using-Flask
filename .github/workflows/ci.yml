@@ -203,9 +203,7 @@ jobs:
           docker compose logs
           exit 1
       - name: Smoke tests
-        run: |
-          pip install -r requirements.txt 2>/dev/null
-          python scripts/smoke_test.py http://localhost:5000
+        run: python scripts/smoke_test.py http://localhost:5000
       - name: Comment PR
         uses: actions/github-script@v7
         with:
@@ -250,9 +248,7 @@ jobs:
           docker compose -p staging logs
           exit 1
       - name: Run smoke tests on staging
-        run: |
-          pip install -r requirements.txt 2>/dev/null
-          python scripts/smoke_test.py http://localhost:5000
+        run: python scripts/smoke_test.py http://localhost:5000
 
   dast-staging:
     if: github.event_name == 'push' && github.ref == 'refs/heads/staging'

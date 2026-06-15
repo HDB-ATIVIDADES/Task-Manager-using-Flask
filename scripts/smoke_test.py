@@ -50,7 +50,7 @@ r = request('POST', '/add_task', {
 assert r.status in (200, 302), f'POST /add_task returned {r.status}'
 
 # 5. Dashboard
-r = request('GET', '/')
+r = request('GET', '/all_tasks')
 assert r.status == 200, f'GET / returned {r.status}'
 body = r.read().decode()
 assert 'Review smoke test task' in body, 'Task not found on dashboard'
