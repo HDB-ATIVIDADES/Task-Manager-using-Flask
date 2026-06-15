@@ -1,0 +1,154 @@
+{
+  "title": "App Logs - Task Manager",
+  "uid": "app-logs",
+  "tags": ["flask", "task-manager"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Timeline de Logs",
+      "type": "logs",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "{job=\"flask-app\"}",
+          "refId": "A"
+        }
+      ],
+      "datasource": "Loki"
+    },
+    {
+      "id": 2,
+      "title": "LOGIN_FAILURE por minuto",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by(level) (count_over_time({job=\"flask-app\"} |= \"LOGIN_FAILURE\" [$__interval]))",
+          "refId": "A",
+          "legendFormat": "{{level}}"
+        }
+      ],
+      "datasource": "Loki",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "LOGIN_SUCCESS por minuto",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by(level) (count_over_time({job=\"flask-app\"} |= \"LOGIN_SUCCESS\" [$__interval]))",
+          "refId": "A",
+          "legendFormat": "{{level}}"
+        }
+      ],
+      "datasource": "Loki",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Tasks Criadas (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 8 },
+      "targets": [
+        {
+          "expr": "count_over_time({job=\"flask-app\"} |= \"OPERATION_SUCCESS\" |= \"create\" [$__range])",
+          "refId": "A"
+        }
+      ],
+      "datasource": "Loki",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "green" }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Acessos Não Autorizados (24h)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 8 },
+      "targets": [
+        {
+          "expr": "count_over_time({job=\"flask-app\"} |= \"UNAUTHORIZED_ACCESS\" [$__range])",
+          "refId": "A"
+        }
+      ],
+      "datasource": "Loki",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "red" }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Eventos por Severidade (24h)",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by(level) (count_over_time({job=\"flask-app\"} | regexp \"(INFO|WARNING|ERROR)\" [$__range]))",
+          "refId": "A",
+          "legendFormat": "{{level}}"
+        }
+      ],
+      "datasource": "Loki",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "displayLabels": ["name", "percent"],
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": ["sum"]
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Falhas de Login (último minuto) — Alerta Brute-force",
+      "type": "timeseries",
+      "gridPos": { "h": 4, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "count_over_time({job=\"flask-app\"} |= \"LOGIN_FAILURE\" [1m])",
+          "refId": "A",
+          "legendFormat": "LOGIN_FAILURE/min"
+        }
+      ],
+      "datasource": "Loki",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

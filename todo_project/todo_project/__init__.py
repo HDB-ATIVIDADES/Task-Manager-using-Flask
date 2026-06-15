@@ -1,5 +1,6 @@
 import logging
 import logging.handlers
+import os
 
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
@@ -18,14 +19,24 @@ login_manager.login_message_category = 'danger'
 
 bcrypt = Bcrypt(app)
 
+formatter = logging.Formatter(
+    '%(asctime)s TaskManager[%(process)d]: %(levelname)s %(message)s'
+)
+
 try:
     syslog_handler = logging.handlers.SysLogHandler(address='/dev/log')
-    syslog_handler.setFormatter(logging.Formatter(
-        'TaskManager[%(process)d]: %(levelname)s %(message)s'
-    ))
+    syslog_handler.setFormatter(formatter)
     app.logger.addHandler(syslog_handler)
 except (OSError, ConnectionError):
     app.logger.warning('Syslog not available')
+
+log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'logs')
+os.makedirs(log_dir, exist_ok=True)
+file_handler = logging.FileHandler(os.path.join(log_dir, 'app.log'))
+file_handler.setFormatter(formatter)
+app.logger.addHandler(file_handler)
+
+app.logger.setLevel(logging.INFO)
 
 
 @app.before_request
