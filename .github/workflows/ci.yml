@@ -62,7 +62,7 @@ jobs:
       - name: Run tests
         run: |
           cd todo_project
-          python -m pytest tests/ -v --junitxml=report.xml
+          python -m pytest tests/ -v --junitxml=../report.xml
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4
@@ -158,8 +158,8 @@ jobs:
             /zap/zap-baseline.py \
               -t http://app:5000 \
               -c /zap/rules.tsv \
-              -J zap_report.json \
-              -r zap_report.html \
+              -J /zap/wrk/zap_report.json \
+              -r /zap/wrk/zap_report.html \
               -I
       - name: Summarize ZAP findings
         if: always()
@@ -284,8 +284,8 @@ jobs:
             /zap/zap-baseline.py \
               -t http://app:5000 \
               -c /zap/rules.tsv \
-              -J zap_report.json \
-              -r zap_report.html \
+              -J /zap/wrk/zap_report.json \
+              -r /zap/wrk/zap_report.html \
               -I
       - name: Summarize ZAP findings
         if: always()
