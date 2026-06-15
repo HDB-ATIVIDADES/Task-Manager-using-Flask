@@ -1,0 +1,30 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: brute-force
+    folder: Seguranca
+    interval: 10s
+    rules:
+      - uid: brute_force_alert
+        title: "Possivel ataque de forca bruta"
+        condition: "A"
+        data:
+          - refId: "A"
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: "P00000001"
+            model:
+              expr: 'count_over_time({job="flask-app"} |= "LOGIN_FAILURE" [1m])'
+              intervalMs: 10000
+              maxDataPoints: 100
+              refId: "A"
+        noDataState: NoData
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "Mais de 5 falhas de login em 1 minuto — possivel ataque de forca bruta"
+          description: "Foram detectadas {{ $values.A }} falhas de login no ultimo minuto"
+        labels:
+          severity: warning
+        isPaused: false
