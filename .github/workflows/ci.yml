@@ -303,3 +303,66 @@ jobs:
         with:
           name: zap-staging-report
           path: zap_staging_report/
+
+  monitoring:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: dast-staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start full stack (app + monitoring)
+        run: docker compose -p staging up -d
+      - name: Wait for services
+        run: |
+          for i in $(seq 1 30); do
+            APP_OK=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/login 2>/dev/null || echo "000")
+            GRAFANA_OK=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/api/health 2>/dev/null || echo "000")
+            if [ "$APP_OK" = "200" ] && [ "$GRAFANA_OK" = "200" ]; then
+              echo "All services ready"
+              exit 0
+            fi
+            echo "Waiting... app=$APP_OK grafana=$GRAFANA_OK ($i)"
+            sleep 5
+          done
+          echo "Services failed to start"
+          docker compose -p staging logs --tail=30
+          exit 1
+      - name: Generate traffic (normal + brute-force)
+        run: python scripts/generate_traffic.py http://localhost:5000
+      - name: Verify logs in Loki
+        run: |
+          sleep 5
+          RESPONSE=$(curl -s "http://localhost:3100/loki/api/v1/query_range" \
+            --data-urlencode 'query={job="flask-app"}' \
+            --data-urlencode 'limit=1')
+          TOTAL=$(echo "$RESPONSE" | jq -r '.data.result | length')
+          if [ "$TOTAL" = "0" ] || [ -z "$TOTAL" ]; then
+            echo "No logs found in Loki"
+            echo "Response: $RESPONSE"
+            exit 1
+          fi
+          echo "Logs found in Loki: $TOTAL streams"
+      - name: Verify brute-force logs in Loki
+        run: |
+          sleep 5
+          RESPONSE=$(curl -s "http://localhost:3100/loki/api/v1/query_range" \
+            --data-urlencode 'query={job="flask-app"} |= "LOGIN_FAILURE"' \
+            --data-urlencode 'limit=20')
+          COUNT=$(echo "$RESPONSE" | jq -r '.data.result[0].values | length // 0')
+          if [ "$COUNT" -lt 5 ]; then
+            echo "Expected at least 5 LOGIN_FAILURE entries, found $COUNT"
+            echo "Response: $RESPONSE"
+            exit 1
+          fi
+          echo "Found $COUNT LOGIN_FAILURE entries — brute-force simulation confirmed"
+      - name: Export Grafana dashboard
+        run: |
+          curl -s "http://admin:admin@localhost:3000/api/dashboards/uid/app-logs" \
+            -o monitoring-dashboard.json
+      - name: Upload monitoring report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-report
+          path: monitoring-dashboard.json
