@@ -154,12 +154,13 @@ jobs:
             --network "$NETWORK" \
             -v "$PWD/.zap/rules.tsv":/zap/rules.tsv:ro \
             -v "$PWD/zap_report":/zap/wrk \
+            --workdir /zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             /zap/zap-baseline.py \
               -t http://app:5000 \
               -c /zap/rules.tsv \
-              -J /zap/wrk/zap_report.json \
-              -r /zap/wrk/zap_report.html \
+              -J zap_report.json \
+              -r zap_report.html \
               -I
       - name: Summarize ZAP findings
         if: always()
@@ -280,12 +281,13 @@ jobs:
             --network "$NETWORK" \
             -v "$PWD/.zap/rules.tsv":/zap/rules.tsv:ro \
             -v "$PWD/zap_staging_report":/zap/wrk \
+            --workdir /zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             /zap/zap-baseline.py \
               -t http://app:5000 \
               -c /zap/rules.tsv \
-              -J /zap/wrk/zap_report.json \
-              -r /zap/wrk/zap_report.html \
+              -J zap_report.json \
+              -r zap_report.html \
               -I
       - name: Summarize ZAP findings
         if: always()
